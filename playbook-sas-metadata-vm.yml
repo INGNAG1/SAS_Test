@@ -195,8 +195,7 @@
 #- ansible.posix.sysctl:
 #   name: kernel.sem
 #   state: present
-#   sysctl_file: /etc/sysctl.conf
-	
+#   sysctl_file: /etc/sysctl.conf	
 #- ansible.posix.sysctl:
 #   name: kernel.sem
 #   value: '250 32000 100 1024'
