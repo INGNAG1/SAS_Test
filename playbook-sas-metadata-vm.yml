@@ -1,0 +1,204 @@
+# ansible-configured
+---
+- name: "SAS METADATA Pre-reqs install"
+  hosts: localhost
+  connection: local
+  vars:
+    ssdDiskList: ["lun0"]
+
+  tasks:
+    - hostname: 
+        name: sas-metadata-vm
+    #
+    # Add Packages
+    #
+    - name: ensure a list of packages installed
+      yum:
+        name: "{{ packages }}"
+      vars:
+        packages:
+          - libpng12.x86_64
+          - dejavu-serif-fonts.noarch
+          - libX11.i686
+          - libX11-common.noarch
+          - libXau.x86_64
+          - libXft.i686
+          - libXi.x86_64
+          - libXrender.i686
+          - libXt.x86_64
+          - libXaw.i686
+          - libXcursor.i686
+          - libXdamage.i686
+          - libXdmcp.i686
+          - libXfixes.i686
+          - libXfont2.i686
+          - libXpm.i686
+          - libXxf86vm.i686
+          - xorg-x11-xauth.x86_64
+          - xorg-x11-server-Xorg.x86_64
+          - xorg-x11-xkb-utils.x86_64
+          - unixODBC.x86_64
+          - glibc
+          - nfs-utils
+          - xterm
+          - xclock
+          - doxygen
+          - libXtst.so.6
+          - ksh
+
+    - name: Create LVM Partition (ssd)
+      parted:
+        device: "{{ item }}"
+        number: 1
+        flags: [lvm]
+        state: present
+        label: gpt
+      with_items:
+        - /dev/sdc
+
+    - name: Create VG
+      lvg:
+        vg: "vg.sas-ssd"
+        pvs: "/dev/sdc1"
+
+    - name: Create  lv
+      lvol:
+        vg: "vg.sas-ssd"
+        lv: "lv.sas-backup"
+        opts: "--readahead 8m --stripes 1 --stripesize 256"
+        size: 1024g
+    - name: Create  lv
+      lvol:
+        vg: "vg.sas-ssd"
+        lv: "lv.sas-depot"
+        opts: "--readahead 8m --stripes 1 --stripesize 256"
+        size: 100g
+    - name: Create  lv
+      lvol:
+        vg: "vg.sas-ssd"
+        lv: "lv.sas-home"
+        opts: "--readahead 8m --stripes 1 --stripesize 256"
+        size: 100g
+    - name: Create  lv
+      lvol:
+        vg: "vg.sas-ssd"
+        lv: "lv.sas-config"
+        opts: "--readahead 8m --stripes 1 --stripesize 256"
+        size: 100g
+    - name: Create  lv
+      lvol:
+        vg: "vg.sas-ssd"
+        lv: "lv.sas-config-lev1-sasmeta"
+        opts: "--readahead 8m --stripes 1 --stripesize 256"
+        size: 100g
+
+    - name: Create the file system
+      filesystem:
+        fstype: "xfs"
+        dev: "/dev/mapper/vg.sas--ssd-lv.sas--backup"
+
+    - name: Create the file system
+      filesystem:
+        fstype: "xfs"
+        dev: "/dev/mapper/vg.sas--ssd-lv.sas--depot"
+
+    - name: Create the file system
+      filesystem:
+        fstype: "xfs"
+        dev: "/dev/mapper/vg.sas--ssd-lv.sas--home"
+
+    - name: Create the file system
+      filesystem:
+        fstype: "xfs"
+        dev: "/dev/mapper/vg.sas--ssd-lv.sas--config"
+
+    - name: Create the file system
+      filesystem:
+        fstype: "xfs"
+        dev: "/dev/mapper/vg.sas--ssd-lv.sas--config--lev1--sasmeta"
+
+    - name: Mount the created filesystem
+      mount:
+        path: "/sas/backup"
+        src: "/dev/mapper/vg.sas--ssd-lv.sas--backup"
+        fstype: "xfs"
+        opts: rw,noatime,nodev
+        state: mounted
+
+    - name: Mount the created filesystem
+      mount:
+        path: "/sas/depot"
+        src: "/dev/mapper/vg.sas--ssd-lv.sas--depot"
+        fstype: "xfs"
+        opts: rw,noatime,nodev
+        state: mounted
+
+    - name: Mount the created filesystem
+      mount:
+        path: "/sas/home"
+        src: "/dev/mapper/vg.sas--ssd-lv.sas--home"
+        fstype: "xfs"
+        opts: rw,noatime,nodev
+        state: mounted
+
+    - name: Mount the created filesystem
+      mount:
+        path: "/sas/config"
+        src: "/dev/mapper/vg.sas--ssd-lv.sas--config"
+        fstype: "xfs"
+        opts: rw,noatime,nodev
+        state: mounted
+
+    - name: Mount the created filesystem
+      mount:
+        path: "/sas/config/Lev1/SASMeta"
+        src: "/dev/mapper/vg.sas--ssd-lv.sas--config--lev1--sasmeta"
+        fstype: "xfs"
+        opts: rw,noatime,nodev
+        state: mounted
+
+    - name: Export NFS share
+      lineinfile:
+        path: /etc/exports
+        line: /sas/backup     *(rw)
+
+    - name: Export NFS
+      lineinfile:
+        path: /etc/exports
+        line: /sas/depot     *(rw)
+
+    - name: Make NFS exports active
+      command: exportfs -ra
+
+    - name: Set sas folder owner
+      file:
+        dest: /sas
+        owner: sas
+        group: sas
+        mode: 0775
+        recurse: yes
+
+    - name: Set /sas/config folder owner to sas
+      file:
+        dest: /sas/config
+        owner: sas
+        group: sas
+        mode: 0775
+        recurse: yes
+
+    - name: Start nfs service
+      service:
+        name: nfs
+        state: started
+
+#SAS Admin team requested to chnage the SEM values 
+#- ansible.posix.sysctl:
+#   name: kernel.sem
+#   state: present
+#   sysctl_file: /etc/sysctl.conf
+	
+#- ansible.posix.sysctl:
+#   name: kernel.sem
+#   value: '250 32000 100 1024'
+#   sysctl_file: /etc/sysctl.conf
+#   reload: yes
